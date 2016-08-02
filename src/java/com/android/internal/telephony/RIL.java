@@ -106,11 +106,11 @@ class RILRequest {
     //***** Class Variables
     static Random sRandom = new Random();
     static AtomicInteger sNextSerial = new AtomicInteger(0);
-    private static Object sPoolSync = new Object();
-    private static RILRequest sPool = null;
-    private static int sPoolSize = 0;
-    private static final int MAX_POOL_SIZE = 4;
-    private Context mContext;
+    protected static Object sPoolSync = new Object();
+    protected static RILRequest sPool = null;
+    protected static int sPoolSize = 0;
+    protected static final int MAX_POOL_SIZE = 4;
+    protected Context mContext;
 
     //***** Instance Variables
     int mSerial;
@@ -175,7 +175,7 @@ class RILRequest {
         }
     }
 
-    private RILRequest() {
+    protected RILRequest() {
     }
 
     static void
@@ -247,7 +247,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
      * Wake lock timeout should be longer than the longest timeout in
      * the vendor ril.
      */
-    private static final int DEFAULT_WAKE_LOCK_TIMEOUT = 60000;
+    protected static final int DEFAULT_WAKE_LOCK_TIMEOUT = 60000;
     private static final int BYTE_SIZE = 1;
 
     /** Starting number for OEMHOOK request and response IDs */
@@ -309,9 +309,9 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
     // The number of the required config values for broadcast SMS stored in the C struct
     // RIL_CDMA_BroadcastServiceInfo
-    private static final int CDMA_BSI_NO_OF_INTS_STRUCT = 3;
+    protected static final int CDMA_BSI_NO_OF_INTS_STRUCT = 3;
 
-    private static final int CDMA_BROADCAST_SMS_NO_OF_SERVICE_CATEGORIES = 31;
+    protected static final int CDMA_BROADCAST_SMS_NO_OF_SERVICE_CATEGORIES = 31;
 
     private static final char NULL_TERMINATOR = '\0';
 
@@ -320,7 +320,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
     /** Sim DePersonalization code */
     private static final int OEMHOOK_EVT_HOOK_ENTER_DEPERSONALIZATION_CODE = OEMHOOK_BASE + 51;
 
-    private final DisplayManager.DisplayListener mDisplayListener =
+    protected final DisplayManager.DisplayListener mDisplayListener =
             new DisplayManager.DisplayListener() {
         @Override
         public void onDisplayAdded(int displayId) { }
@@ -340,7 +340,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         }
     };
 
-    private final BroadcastReceiver mBatteryStateListener = new BroadcastReceiver() {
+    protected final BroadcastReceiver mBatteryStateListener = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             boolean oldState = mIsDevicePlugged;
@@ -481,7 +481,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
      * @return Length of message less header, or -1 on end of stream.
      * @throws IOException
      */
-    private static int readRilMessage(InputStream is, byte[] buffer)
+    protected static int readRilMessage(InputStream is, byte[] buffer)
             throws IOException {
         int countRead;
         int offset;
@@ -1396,7 +1396,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         send(rr);
     }
 
-    private void
+    protected void
     constructGsmSendSmsRilRequest (RILRequest rr, String smscPDU, String pdu) {
         rr.mParcel.writeInt(2);
         rr.mParcel.writeString(smscPDU);
@@ -1428,7 +1428,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         send(rr);
     }
 
-    private void
+    protected void
     constructCdmaSendSmsRilRequest(RILRequest rr, byte[] pdu) {
         int address_nbr_of_digits;
         int subaddr_nbr_of_digits;
@@ -1672,7 +1672,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
      *  Translates EF_SMS status bits to a status value compatible with
      *  SMS AT commands.  See TS 27.005 3.1.
      */
-    private int translateStatus(int status) {
+    protected int translateStatus(int status) {
         switch(status & 0x7) {
             case SmsManager.STATUS_ON_ICC_READ:
                 return 1;
@@ -2479,7 +2479,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
      * Update the screen state. Send screen state ON if the default display is ON or the device
      * is plugged.
      */
-    private void updateScreenState() {
+    protected void updateScreenState() {
         final int oldState = mRadioScreenState;
         mRadioScreenState = (mDefaultDisplayState == Display.STATE_ON || mIsDevicePlugged)
                 ? RADIO_SCREEN_ON : RADIO_SCREEN_OFF;
@@ -2514,8 +2514,9 @@ public class RIL extends BaseCommands implements CommandsInterface {
     protected RadioState getRadioStateFromInt(int stateInt) {
         RadioState state;
 
+	int stateIntNormalized = convertRadioState(stateInt);
         /* RIL_RadioState ril.h */
-        switch(stateInt) {
+        switch(stateIntNormalized) {
             case 0: state = RadioState.RADIO_OFF; break;
             case 1: state = RadioState.RADIO_UNAVAILABLE; break;
             case 2:
@@ -2534,7 +2535,9 @@ public class RIL extends BaseCommands implements CommandsInterface {
         }
         return state;
     }
-
+    protected int convertRadioState(int paramInt){
+	return paramInt > 1 && paramInt < 10 ? 10 : paramInt;
+}
     protected void switchToRadioState(RadioState newState) {
         setRadioState(newState);
     }
@@ -2548,7 +2551,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
      * happen often.
      */
 
-    private void
+    protected void
     acquireWakeLock() {
         synchronized (mWakeLock) {
             mWakeLock.acquire();
@@ -2560,7 +2563,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
         }
     }
 
-    private void
+    protected void
     decrementWakeLock() {
         synchronized (mWakeLock) {
             if (mWakeLockCount > 1) {
@@ -2574,7 +2577,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
     }
 
     // true if we had the wakelock
-    private boolean
+    protected boolean
     clearWakeLock() {
         synchronized (mWakeLock) {
             if (mWakeLockCount == 0 && mWakeLock.isHeld() == false) return false;
