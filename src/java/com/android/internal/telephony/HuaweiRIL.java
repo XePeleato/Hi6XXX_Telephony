@@ -55,10 +55,13 @@ public class HuaweiRIL extends RIL implements CommandsInterface {
 
     static final boolean RILJ_LOGD = true;
     static final boolean RILJ_LOGV = true; // STOPSHIP if true
-
+    private static final String RILJ_LOG_TAG = "RILJ-HuaweiRIL";
+    private static final boolean SHOW_4G_PLUS_ICON = SystemProperties.getBoolean((String)"ro.config.hw_show_4G_Plus_icon", (boolean)false);
     static final int NETWORK_TYPE_TDS = 0x11;
     static final int NETWORK_TYPE_TDS_HSDPA = 0x12; //=> 8
     static final int NETWORK_TYPE_TDS_HSUPA = 0x13; //=> 9
+    private int mBalongSimSlot = 0;
+    private Integer mRilInstanceId = null;
 
     // RIL_REQUEST
     static final int RIL_REQUEST_GET_POL_CAPABILITY = 0x810;
@@ -73,8 +76,10 @@ public class HuaweiRIL extends RIL implements CommandsInterface {
     static final int RIL_REQUEST_HW_GET_DATA_SUBSCRIPTION = 0x1fb;
     static final int RIL_REQUEST_HW_GET_EOPLMN_LIST = 0x7f7;
     static final int RIL_REQUEST_HW_GET_HANDLE_DETECT = 0x7ef;
+    static final int RIL_REQUEST_HW_GET_ICCID = 0x81b;
     static final int RIL_REQUEST_HW_GET_IMEI_VERIFY_STATUS = 0x7e5;
     static final int RIL_REQUEST_HW_GET_ISMCOEX = 0x813;
+    static final int RIL_REQUEST_HW_GET_LTE_RELEASE_VERSION = 0x83d;
     static final int RIL_REQUEST_HW_GET_PSDOMAIN_AUTOATTACH_TYPE = 0x7e8;
     static final int RIL_REQUEST_HW_GET_QOS_STATUS = 0x1ff;
     static final int RIL_REQUEST_HW_GET_SIMLOCK_STATUS = 0x81a;
@@ -126,6 +131,7 @@ public class HuaweiRIL extends RIL implements CommandsInterface {
     static final int RIL_REQUEST_HW_RRC_CONTROL = 0x7e2;
     static final int RIL_REQUEST_HW_SENDAPDU = 0x207;
     static final int RIL_REQUEST_HW_SETUP_QOS = 0x1fd;
+    static final int RIL_REQUEST_HW_SET_ACTIVE_MODEM_MODE = 0x828;
     static final int RIL_REQUEST_HW_SET_AUDIO_CHANNEL = 0x208;
     static final int RIL_REQUEST_HW_SET_DATA_SUBSCRIPTION = 0x1f9;
     static final int RIL_REQUEST_HW_SET_EMERGENCY_NUMBERS = 0x7d1;
@@ -140,6 +146,7 @@ public class HuaweiRIL extends RIL implements CommandsInterface {
     static final int RIL_REQUEST_HW_SET_SIM_LESS = 0x7d3;
     static final int RIL_REQUEST_HW_SET_SIM_SLOT_CFG = 0x7ec;
     static final int RIL_REQUEST_HW_SET_SUBSCRIPTION_MODE = 0x1fc;
+    static final int RIL_REQUEST_HW_SET_TEE_DATA_READY_FLAG = 0x82d;
     static final int RIL_REQUEST_HW_SET_TRANSMIT_POWER = 0x7d4;
     static final int RIL_REQUEST_HW_SET_UICC_SUBSCRIPTION = 0x1f8;
     static final int RIL_REQUEST_HW_SET_VOICECALL_BACKGROUND_STATE = 0x7e3;
@@ -149,11 +156,15 @@ public class HuaweiRIL extends RIL implements CommandsInterface {
     static final int RIL_REQUEST_HW_SIM_TRANSMIT_BASIC = 0x7d6;
     static final int RIL_REQUEST_HW_SIM_TRANSMIT_CHANNEL = 0x7d9;
     static final int RIL_REQUEST_HW_SUSPEND_QOS = 0x201;
+    static final int RIL_REQUEST_HW_SWITCH_SIM_SLOT_WITHOUT_RESTART_RILD = 0x82e;
+    static final int RIL_REQUEST_HW_SET_UE_OPERATION_MODE = 0x847;
     static final int RIL_REQUEST_HW_UICC_AUTH = 0x821;
     static final int RIL_REQUEST_HW_UICC_FILE_UPDATE = 0x823;
     static final int RIL_REQUEST_HW_UICC_GBA_BOOTSTRAP = 0x822;
     static final int RIL_REQUEST_HW_UICC_KS_NAF = 0x825;
     static final int RIL_REQUEST_HW_SET_PCM = 521;
+    static final int RIL_REQUEST_HW_VSIM_GET_SIM_STATE = 0x7f6;
+    static final int RIL_REQUEST_HW_VSIM_SET_SIM_STATE = 0x7f5;
     static final int RIL_REQUEST_SET_POL_ENTRY = 0x812;
 
     // RIL_UNSOL
@@ -543,11 +554,11 @@ public class HuaweiRIL extends RIL implements CommandsInterface {
 
         if (lteRsrp != 0) // LTE
         {
-            if (lteRsrp > -44) lteSignalStrength = 64; // None or Unknown
-            else if (lteRsrp >= -85) lteSignalStrength = 63; // Great
-            else if (lteRsrp >= -95) lteSignalStrength = 11; // Good
-            else if (lteRsrp >= -105) lteSignalStrength = 7; // Moderate
-            else if (lteRsrp >= -115) lteSignalStrength = 4; // Poor
+            if (lteRsrp > -20) lteSignalStrength = 64; // None or Unknown
+            else if (lteRsrp >= -97) lteSignalStrength = 63; // Great
+            else if (lteRsrp >= -105) lteSignalStrength = 11; // Good
+            else if (lteRsrp >= -113) lteSignalStrength = 7; // Moderate
+            else if (lteRsrp >= -120) lteSignalStrength = 4; // Poor
             else if (lteRsrp >= -140) lteSignalStrength = 64; // None or Unknown
         }
         else if (gsmSignalStrength == 0 && lteRsrp == 0) // 3G
@@ -555,7 +566,7 @@ public class HuaweiRIL extends RIL implements CommandsInterface {
             lteRsrp = (mWcdmaRscp & 0xFF) - 256;
             lteRsrq = (mWcdmaEcio & 0xFF) - 256;
 
-            if (lteRsrp > -44) { // None or Unknown
+            if (lteRsrp > -20) { // None or Unknown
                 lteSignalStrength = 64;
                 lteRssnr = -200;
             } else if (lteRsrp >= -85) { // Great
@@ -579,7 +590,7 @@ public class HuaweiRIL extends RIL implements CommandsInterface {
         {         
             lteRsrp = (gsmSignalStrength & 0xFF) - 256;
 
-            if (lteRsrp > -44) { // None or Unknown
+            if (lteRsrp > -20) { // None or Unknown
                 lteSignalStrength = 64;
                 lteRsrq = -21;
                 lteRssnr = -200;
