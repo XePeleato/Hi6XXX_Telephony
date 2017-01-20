@@ -45,6 +45,7 @@ import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 
+import com.android.internal.telephony.RIL;
 import com.android.internal.telephony.uicc.IccCardProxy;
 import com.android.internal.telephony.uicc.IccConstants;
 import com.android.internal.telephony.uicc.IccFileHandler;
@@ -78,6 +79,7 @@ public class SubscriptionInfoUpdater extends Handler {
     private static final int EVENT_SIM_IO_ERROR = 6;
     private static final int EVENT_SIM_UNKNOWN = 7;
     private static final int EVENT_SIM_RESTRICTED = 8;
+    private static final int EVENT_SET_PREFERRED_NW_MODE = 9;
 
     private static final String ICCID_STRING_FOR_NO_SIM = "";
     private static final String ICCID_STRING_FOR_NV = "DUMMY_NV_ID";
@@ -108,6 +110,7 @@ public class SubscriptionInfoUpdater extends Handler {
     public static final String CURR_SUBID = "curr_subid";
 
     private static Phone[] mPhone;
+    private CommandsInterface[] mCommandsInterfaces;
     private static Context mContext = null;
     protected static String mIccId[] = new String[PROJECT_SIM_NUM];
     private static int[] mInsertSimState = new int[PROJECT_SIM_NUM];
@@ -127,6 +130,7 @@ public class SubscriptionInfoUpdater extends Handler {
 
         mContext = context;
         mPhone = phone;
+        mCommandsInterfaces = ci;
         mSubscriptionManager = SubscriptionManager.from(mContext);
         mPackageManager = IPackageManager.Stub.asInterface(ServiceManager.getService("package"));
         mUserManager = (UserManager) mContext.getSystemService(Context.USER_SERVICE);
@@ -291,6 +295,18 @@ public class SubscriptionInfoUpdater extends Handler {
         }
     }
 
+    static class SetPreferredNwModeMessage {
+        public int slotId;
+        public int subId;
+        public int networkType;
+
+        SetPreferredNwModeMessage(int slotId, int subId, int networkType) {
+            this.slotId = slotId;
+            this.subId = subId;
+            this.networkType = networkType;
+        }
+    }
+
     @Override
     public void handleMessage(Message msg) {
         switch (msg.what) {
@@ -359,6 +375,12 @@ public class SubscriptionInfoUpdater extends Handler {
 
             case EVENT_SIM_RESTRICTED:
                 updateCarrierServices(msg.arg1, IccCardConstants.INTENT_VALUE_ICC_CARD_RESTRICTED);
+                break;
+
+            case EVENT_SET_PREFERRED_NW_MODE:
+                AsyncResult ar = (AsyncResult)msg.obj;
+                SetPreferredNwModeMessage mode = (SetPreferredNwModeMessage) ar.userObj;
+                setPreferredNwModeForSlot(mode.slotId, mode.subId, mode.networkType, null);
                 break;
 
             default:
@@ -492,7 +514,7 @@ public class SubscriptionInfoUpdater extends Handler {
         updateCarrierServices(slotId, IccCardConstants.INTENT_VALUE_ICC_LOADED);
     }
 
-    private void setDefaultDataSubNetworkType(int slotId, int subId) {
+    public void setDefaultDataSubNetworkType(int slotId, int subId) {
         if (subId == SubscriptionManager.DEFAULT_SUBSCRIPTION_ID) {
             Rlog.e(LOG_TAG, "setDefaultDataSubNetworkType called with DEFAULT_SUB_ID");
             return;
@@ -524,13 +546,8 @@ public class SubscriptionInfoUpdater extends Handler {
         if (userNwType != SubscriptionManager.DEFAULT_NW_MODE && userNwType != networkType) {
             networkType = userNwType;
         }
-        boolean isDsds = TelephonyManager.getDefault().getMultiSimConfiguration()
-                == TelephonyManager.MultiSimVariants.DSDS;
-        if (DBG) Rlog.d(LOG_TAG, "[setDefaultDataSubNetworkType] subId=" + subId);
-        if (DBG) Rlog.d(LOG_TAG, "[setDefaultDataSubNetworkType] isDSDS=" + isDsds);
-        boolean isMultiRat = SystemProperties.getBoolean("ro.ril.multi_rat_capable", false);
 
-        if (isDsds && !isMultiRat) {
+        if (needsSim2gsmOnly()) {
             int networkType2 = Phone.NT_MODE_GSM_ONLY; // Hardcoded due to modem limitation
             int slotId1 = SubscriptionManager.DEFAULT_SIM_SLOT_INDEX;
             int slotId2 = SubscriptionManager.DEFAULT_SIM_SLOT_INDEX;
@@ -553,11 +570,12 @@ public class SubscriptionInfoUpdater extends Handler {
                             + networkType2 + ", slotId2: " + slotId2);
                 }
             }
-            setPreferredNwModeForSlot(slotId1, subId1, networkType);
-            setPreferredNwModeForSlot(slotId2, subId2, networkType2);
+            Message continuation = obtainMessage(EVENT_SET_PREFERRED_NW_MODE,
+                    new SetPreferredNwModeMessage(slotId1, subId1, networkType));
+            setPreferredNwModeForSlot(slotId2, subId2, networkType2, continuation);
         } else {
             // Set the modem network mode
-            setPreferredNwModeForSlot(slotId, subId, networkType);
+            setPreferredNwModeForSlot(slotId, subId, networkType, null);
         }
 
         // Only support automatic selection mode on SIM change.
@@ -565,13 +583,20 @@ public class SubscriptionInfoUpdater extends Handler {
                 obtainMessage(EVENT_GET_NETWORK_SELECTION_MODE_DONE, new Integer(slotId)));
     }
 
-    private void setPreferredNwModeForSlot(int slotId, int subId, int networkType) {
-        mPhone[slotId].setPreferredNetworkType(networkType, null);
+    private void setPreferredNwModeForSlot(int slotId, int subId, int networkType,
+            Message message) {
+        mPhone[slotId].setPreferredNetworkType(networkType, message);
         Settings.Global.putInt(mPhone[slotId].getContext().getContentResolver(),
                 Settings.Global.PREFERRED_NETWORK_MODE + subId,
                 networkType);
     }
 
+    private boolean needsSim2gsmOnly() {
+        if (mCommandsInterfaces[0] instanceof RIL) {
+            return ((RIL) mCommandsInterfaces[0]).needsOldRilFeature("sim2gsmonly");
+        }
+        return false;
+    }
 
     private void updateCarrierServices(int slotId, String simState) {
         CarrierConfigManager configManager = (CarrierConfigManager)
